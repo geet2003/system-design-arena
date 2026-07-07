@@ -1,0 +1,25 @@
+export enum NodeType {
+  CLIENT = 'CLIENT',
+  API_GATEWAY = 'API_GATEWAY',
+  LOAD_BALANCER = 'LOAD_BALANCER',
+  SERVICE = 'SERVICE',
+  CACHE = 'CACHE',
+  DATABASE = 'DATABASE',
+  QUEUE = 'QUEUE',
+  CDN = 'CDN',
+  OBJECT_STORAGE = 'OBJECT_STORAGE',
+  AUTH_SERVICE = 'AUTH_SERVICE',
+  SEARCH_SERVICE = 'SEARCH_SERVICE',
+}
+
+export enum SessionStatus {
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  ABANDONED = 'ABANDONED',
+}
+
+export enum PromptDifficulty {
+  EASY = 'EASY',
+  MEDIUM = 'MEDIUM',
+  HARD = 'HARD',
+}

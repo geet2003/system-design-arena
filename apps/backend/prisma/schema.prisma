@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  sessions     InterviewSession[]
+
+  @@map("users")
+}
+
+model Prompt {
+  id                 String             @id @default(cuid())
+  title              String
+  description        String             @db.Text
+  difficulty         PromptDifficulty
+  expectedPatterns   String[]
+  evaluationTemplate Json               @default("{}")
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  sessions           InterviewSession[]
+
+  @@unique([title])
+  @@map("prompts")
+}
+
+model InterviewSession {
+  id           String             @id @default(cuid())
+  userId       String
+  promptId     String
+  currentStage String             @default("diagram")
+  status       SessionStatus      @default(ACTIVE)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt       Prompt             @relation(fields: [promptId], references: [id])
+  diagram      Diagram?
+  evaluations  EvaluationResult[]
+
+  @@index([userId])
+  @@index([promptId])
+  @@map("interview_sessions")
+}
+
+model Diagram {
+  id        String           @id @default(cuid())
+  sessionId String           @unique
+  nodes     Json             @default("[]")
+  edges     Json             @default("[]")
+  version   Int              @default(1)
+  updatedAt DateTime         @updatedAt
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("diagrams")
+}
+
+model EvaluationResult {
+  id          String           @id @default(cuid())
+  sessionId   String
+  warnings    Json             @default("[]")
+  strengths   Json             @default("[]")
+  score       Float            @default(0)
+  generatedAt DateTime         @default(now())
+  session     InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("evaluation_results")
+}
+
+enum PromptDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}

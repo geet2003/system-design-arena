@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* React Flow base styles — import after Tailwind to avoid style conflicts */
+@import '@xyflow/react/dist/style.css';
+
+/* ── draw.io-style handles ──────────────────────────────────────────────────
+   Handles are rendered invisible by inline style (opacity: 0) when the node
+   is not selected.  We reveal them on node hover so the user can still drag
+   out a connection without having to select the node first.              */
+.react-flow__node:hover .react-flow__handle {
+  opacity: 1 !important;
+}
+
+/* Remove the default blue selection outline React Flow adds — our custom
+   node border already changes colour on selection. */
+.react-flow__node.selected > div {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Selected edge highlight — override React Flow's default muted selection */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #2563eb !important;
+  stroke-width: 2.5px !important;
+}

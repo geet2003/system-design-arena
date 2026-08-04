@@ -16,7 +16,8 @@
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
     "tsBuildInfoFile": ".tsbuildinfo",
-    "ignoreDeprecations": "5.0",
+    "ignoreDeprecations": "6.0",
+    "rootDir": "./",
     "baseUrl": "./",
     "paths": {
       "@sds/shared-types": ["../../packages/shared-types/src"]

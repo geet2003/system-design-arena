@@ -52,3 +52,4 @@ coverage/
 # Docker volumes
 postgres-data/
 redis-data/
+docs/

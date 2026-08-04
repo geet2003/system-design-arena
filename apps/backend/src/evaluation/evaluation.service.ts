@@ -23,14 +23,8 @@ export class EvaluationService {
     const nodes = (session.diagram?.nodes ?? []) as unknown as DiagramNode[];
     const edges = (session.diagram?.edges ?? []) as unknown as DiagramEdge[];
     const template = session.prompt.evaluationTemplate as unknown as EvaluationTemplate;
-    const expectedPatterns = session.prompt.expectedPatterns;
 
-    const { warnings, strengths, score } = this.engine.run(
-      nodes,
-      edges,
-      template,
-      expectedPatterns,
-    );
+    const { warnings, strengths, score } = this.engine.run(nodes, edges, template);
 
     return this.prisma.evaluationResult.create({
       data: {

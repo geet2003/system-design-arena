@@ -7,16 +7,33 @@ export interface User {
   createdAt: Date;
 }
 
+export interface ReferenceEdge {
+  from: string;
+  to: string;
+  required: boolean;
+}
+
+export interface IllegalEdge {
+  from: string;
+  to: string;
+  reason: string;
+}
+
+export interface EvaluationTemplate {
+  referenceEdges: ReferenceEdge[];
+  illegalEdges: IllegalEdge[];
+  availableNodeTypes: string[];
+  distractorNodeTypes: string[];
+  componentRoles: Record<string, string>;
+}
+
 export interface Prompt {
   id: string;
   title: string;
   description: string;
   difficulty: PromptDifficulty;
   expectedPatterns: string[];
-  evaluationTemplate: {
-    componentRoles?: Record<string, string>;
-    [key: string]: unknown;
-  };
+  evaluationTemplate: EvaluationTemplate;
 }
 
 export interface InterviewSession {

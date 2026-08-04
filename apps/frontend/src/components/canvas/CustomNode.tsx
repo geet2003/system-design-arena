@@ -20,18 +20,53 @@ function handleStyle(selected: boolean): React.CSSProperties {
   };
 }
 
-const NODE_CONFIG: Record<NodeType, { icon: string; accent: string }> = {
-  [NodeType.CLIENT]:         { icon: '💻', accent: '#2563eb' },
-  [NodeType.API_GATEWAY]:    { icon: '🔀', accent: '#7c3aed' },
-  [NodeType.LOAD_BALANCER]:  { icon: '⚖️',  accent: '#b45309' },
-  [NodeType.SERVICE]:        { icon: '⚙️',  accent: '#065f46' },
-  [NodeType.CACHE]:          { icon: '⚡',  accent: '#b45309' },
-  [NodeType.DATABASE]:       { icon: '🗄️',  accent: '#991b1b' },
-  [NodeType.QUEUE]:          { icon: '📬',  accent: '#c2410c' },
-  [NodeType.CDN]:            { icon: '🌐',  accent: '#0369a1' },
-  [NodeType.OBJECT_STORAGE]: { icon: '🪣',  accent: '#475569' },
-  [NodeType.AUTH_SERVICE]:   { icon: '🔐',  accent: '#6d28d9' },
-  [NodeType.SEARCH_SERVICE]: { icon: '🔍',  accent: '#166534' },
+const NODE_CONFIG: Partial<Record<NodeType, { icon: string; accent: string }>> = {
+  // ── Generic infrastructure ────────────────────────────────────────────────
+  [NodeType.CLIENT]:                 { icon: '💻', accent: '#2563eb' },
+  [NodeType.API_GATEWAY]:            { icon: '🔀', accent: '#7c3aed' },
+  [NodeType.LOAD_BALANCER]:          { icon: '⚖️',  accent: '#b45309' },
+  [NodeType.SERVICE]:                { icon: '⚙️',  accent: '#065f46' },
+  [NodeType.CACHE]:                  { icon: '⚡',  accent: '#b45309' },
+  [NodeType.DATABASE]:               { icon: '🗄️',  accent: '#991b1b' },
+  [NodeType.QUEUE]:                  { icon: '📬',  accent: '#c2410c' },
+  [NodeType.CDN]:                    { icon: '🌐',  accent: '#0369a1' },
+  [NodeType.OBJECT_STORAGE]:         { icon: '🪣',  accent: '#475569' },
+  [NodeType.AUTH_SERVICE]:           { icon: '🔐',  accent: '#6d28d9' },
+  [NodeType.SEARCH_SERVICE]:         { icon: '🔍',  accent: '#166534' },
+  // ── Typed storage ─────────────────────────────────────────────────────────
+  [NodeType.RELATIONAL_DB]:          { icon: '🗃️',  accent: '#991b1b' },
+  [NodeType.NON_RELATIONAL_DB]:      { icon: '📦',  accent: '#b45309' },
+  [NodeType.REDIS_CACHE]:            { icon: '⚡',  accent: '#b45309' },
+  // ── URL Shortener ─────────────────────────────────────────────────────────
+  [NodeType.URL_WRITE_SERVICE]:      { icon: '✏️',  accent: '#065f46' },
+  [NodeType.URL_READ_SERVICE]:       { icon: '📖',  accent: '#065f46' },
+  [NodeType.ID_GENERATOR]:           { icon: '🔢',  accent: '#0369a1' },
+  [NodeType.ANALYTICS_SERVICE]:      { icon: '📊',  accent: '#0369a1' },
+  // ── Rate Limiter ──────────────────────────────────────────────────────────
+  [NodeType.RATE_LIMITER_SERVICE]:   { icon: '🚦',  accent: '#991b1b' },
+  [NodeType.APP_SERVICE]:            { icon: '⚙️',  accent: '#065f46' },
+  // ── Twitter ───────────────────────────────────────────────────────────────
+  [NodeType.POST_SERVICE]:           { icon: '📝',  accent: '#065f46' },
+  [NodeType.FEED_SERVICE]:           { icon: '📰',  accent: '#065f46' },
+  [NodeType.USER_SERVICE]:           { icon: '👤',  accent: '#6d28d9' },
+  [NodeType.MEDIA_SERVICE]:          { icon: '🖼️',  accent: '#0369a1' },
+  [NodeType.TIMELINE_WORKER]:        { icon: '⏱️',  accent: '#c2410c' },
+  // ── YouTube ───────────────────────────────────────────────────────────────
+  [NodeType.UPLOAD_SERVICE]:         { icon: '⬆️',  accent: '#065f46' },
+  [NodeType.STREAMING_SERVICE]:      { icon: '▶️',  accent: '#065f46' },
+  [NodeType.METADATA_SERVICE]:       { icon: '🏷️',  accent: '#0369a1' },
+  [NodeType.RECOMMENDATION_SERVICE]: { icon: '✨',  accent: '#7c3aed' },
+  [NodeType.TRANSCODING_SERVICE]:    { icon: '🎞️',  accent: '#c2410c' },
+  [NodeType.THUMBNAIL_SERVICE]:      { icon: '🖼️',  accent: '#b45309' },
+  // ── Uber ──────────────────────────────────────────────────────────────────
+  [NodeType.LOCATION_SERVICE]:       { icon: '📍',  accent: '#065f46' },
+  [NodeType.MATCHING_SERVICE]:       { icon: '🔗',  accent: '#7c3aed' },
+  [NodeType.TRIP_SERVICE]:           { icon: '🚗',  accent: '#065f46' },
+  [NodeType.PAYMENT_SERVICE]:        { icon: '💳',  accent: '#991b1b' },
+  [NodeType.NOTIFICATION_SERVICE]:   { icon: '🔔',  accent: '#b45309' },
+  // ── WhatsApp ──────────────────────────────────────────────────────────────
+  [NodeType.CHAT_SERVICE]:           { icon: '💬',  accent: '#065f46' },
+  [NodeType.PRESENCE_SERVICE]:       { icon: '🟢',  accent: '#166534' },
 };
 
 interface CustomNodeProps {

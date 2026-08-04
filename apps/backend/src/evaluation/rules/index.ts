@@ -1,101 +1,241 @@
 import { NodeType } from '@sds/shared-types';
-import type { EvaluationWarning, EvaluationStrength } from '@sds/shared-types';
+import type { EvaluationWarning, EvaluationStrength, ReferenceEdge, IllegalEdge, EvaluationTemplate } from '@sds/shared-types';
 import { ArchitectureGraph } from '../graph';
 
-export interface EvaluationTemplate {
-  requiredConcepts: string[];
-  antiPatterns: string[];
-  hints: Record<string, string>;
-  /**
-   * Directed connection pairs expected for this specific prompt.
-   * Each pair [A, B] means A should be able to reach B.
-   */
-  expectedConnections: [string, string][];
-  /**
-   * Per-component role descriptions for this specific prompt.
-   */
-  componentRoles: Record<string, string>;
+export type { EvaluationTemplate };
+
+// Human-readable labels for NodeType values used in warning messages
+const NODE_LABELS: Record<string, string> = {
+  CLIENT:                 'Client',
+  API_GATEWAY:            'API Gateway',
+  LOAD_BALANCER:          'Load Balancer',
+  SERVICE:                'Service',
+  CACHE:                  'Cache',
+  DATABASE:               'Database',
+  QUEUE:                  'Message Queue',
+  CDN:                    'CDN',
+  OBJECT_STORAGE:         'Object Storage',
+  AUTH_SERVICE:           'Auth Service',
+  SEARCH_SERVICE:         'Search Service',
+  RELATIONAL_DB:          'Relational Database',
+  NON_RELATIONAL_DB:      'Non-Relational Database',
+  REDIS_CACHE:            'Redis Cache',
+  URL_WRITE_SERVICE:      'URL Write Service',
+  URL_READ_SERVICE:       'URL Read Service',
+  ID_GENERATOR:           'ID Generator',
+  ANALYTICS_SERVICE:      'Analytics Service',
+  RATE_LIMITER_SERVICE:   'Rate Limiter Service',
+  APP_SERVICE:            'Application Service',
+  POST_SERVICE:           'Post Service',
+  FEED_SERVICE:           'Feed Service',
+  USER_SERVICE:           'User Service',
+  MEDIA_SERVICE:          'Media Service',
+  TIMELINE_WORKER:        'Timeline Worker',
+  UPLOAD_SERVICE:         'Upload Service',
+  STREAMING_SERVICE:      'Streaming Service',
+  METADATA_SERVICE:       'Metadata Service',
+  RECOMMENDATION_SERVICE: 'Recommendation Service',
+  TRANSCODING_SERVICE:    'Transcoding Service',
+  THUMBNAIL_SERVICE:      'Thumbnail Service',
+  LOCATION_SERVICE:       'Location Service',
+  MATCHING_SERVICE:       'Matching Service',
+  TRIP_SERVICE:           'Trip Service',
+  PAYMENT_SERVICE:        'Payment Service',
+  NOTIFICATION_SERVICE:   'Notification Service',
+  CHAT_SERVICE:           'Chat Service',
+  PRESENCE_SERVICE:       'Presence Service',
+};
+
+export function nodeLabel(type: string): string {
+  return NODE_LABELS[type] ?? type.replace(/_/g, ' ');
 }
 
-// ---------- Presence-based antiPattern detectors ----------
+// ─── Step 1: Illegal edge check ───────────────────────────────────────────────
+// Each illegalEdge present in the diagram emits a HIGH warning and blocks the
+// topology bonus.
 
-type Detector = (graph: ArchitectureGraph) => boolean;
+export function checkIllegalEdges(
+  graph: ArchitectureGraph,
+  illegalEdges: IllegalEdge[],
+): EvaluationWarning[] {
+  const warnings: EvaluationWarning[] = [];
+  for (const { from, to, reason } of illegalEdges) {
+    if (graph.anyDirectEdge(from as NodeType, to as NodeType)) {
+      warnings.push({
+        code: `ILLEGAL_EDGE_${reason}`,
+        message: illegalEdgeMessage(from, to, reason),
+        severity: 'HIGH',
+      });
+    }
+  }
+  return warnings;
+}
 
-export const ANTI_PATTERN_DETECTORS: Record<string, Detector> = {
-  no_cache: (g) => !g.hasNodeType(NodeType.CACHE),
-  no_load_balancer: (g) => !g.hasNodeType(NodeType.LOAD_BALANCER),
-  no_cdn: (g) => !g.hasNodeType(NodeType.CDN),
-  no_object_storage: (g) => !g.hasNodeType(NodeType.OBJECT_STORAGE),
-  no_async_processing: (g) => !g.hasNodeType(NodeType.QUEUE),
-  no_api_gateway: (g) => !g.hasNodeType(NodeType.API_GATEWAY),
-  single_service: (g) => g.countNodeType(NodeType.SERVICE) < 2,
-  no_shared_rate_limit_store: (g) => {
-    const services = g.getNodesByType(NodeType.SERVICE);
-    if (services.length < 2) return false;
-    if (!g.hasNodeType(NodeType.CACHE)) return true;
-    return !g.canReach(NodeType.SERVICE, NodeType.CACHE);
-  },
-  single_database: (g) => g.countNodeType(NodeType.DATABASE) < 2,
-  direct_db_access_from_client: (g) => g.anyDirectEdge(NodeType.CLIENT, NodeType.DATABASE),
-  no_gateway_cache_link: (g) => {
-    if (!g.hasNodeType(NodeType.API_GATEWAY)) return false;
-    if (!g.hasNodeType(NodeType.CACHE)) return false;
-    return !g.canReachUndirected(NodeType.API_GATEWAY, NodeType.CACHE);
-  },
-  rate_limit_cache_has_outgoing: (g) => {
-    const gateways = g.getNodesByType(NodeType.API_GATEWAY);
-    for (const gw of gateways) {
-      for (const neighborId of g.adjacency.get(gw.id) ?? []) {
-        const neighbor = g.nodes.get(neighborId);
-        if (neighbor?.type === NodeType.CACHE) {
-          if ((g.adjacency.get(neighborId)?.size ?? 0) > 0) return true;
+function illegalEdgeMessage(from: string, to: string, reason: string): string {
+  switch (reason) {
+    case 'CLIENT_BYPASS_GATEWAY':
+      return `${nodeLabel(from)} connects directly to ${nodeLabel(to)} — clients must route through the Load Balancer and API Gateway first.`;
+    case 'DIRECT_DB_ACCESS':
+      return `${nodeLabel(from)} has a direct connection to ${nodeLabel(to)} — databases must never be directly exposed to clients.`;
+    case 'GATEWAY_DIRECT_DB':
+      return `${nodeLabel(from)} connects directly to ${nodeLabel(to)} — the Gateway should route to a service layer, not the database.`;
+    case 'SERVICE_DIRECT_CLIENT':
+      return `${nodeLabel(from)} connects directly back to ${nodeLabel(to)} — responses should flow through the gateway, not bypass it.`;
+    default:
+      return `${nodeLabel(from)} → ${nodeLabel(to)} is a forbidden connection in this architecture (${reason}).`;
+  }
+}
+
+// ─── Step 2: Reference edge scoring ──────────────────────────────────────────
+// Each required referenceEdge is checked with anyDirectEdge — strict single hop,
+// correct direction. No BFS, no path-finding. You either have the edge or you don't.
+//
+// Matched   → strength entry
+// Missing (both nodes present) → MEDIUM warning
+// Missing (node absent)        → MEDIUM warning per absent node (deduplicated)
+
+export interface EdgeScoringResult {
+  matched: number;
+  total: number;
+  warnings: EvaluationWarning[];
+  strengths: EvaluationStrength[];
+}
+
+export function scoreReferenceEdges(
+  graph: ArchitectureGraph,
+  referenceEdges: ReferenceEdge[],
+  componentRoles: Record<string, string>,
+): EdgeScoringResult {
+  const required = referenceEdges.filter((e) => e.required);
+  let matched = 0;
+  const warningMap = new Map<string, EvaluationWarning>();
+  const strengths: EvaluationStrength[] = [];
+
+  for (const edge of required) {
+    const fromType = edge.from as NodeType;
+    const toType = edge.to as NodeType;
+    const hasFrom = graph.hasNodeType(fromType);
+    const hasTo = graph.hasNodeType(toType);
+
+    if (graph.anyDirectEdge(fromType, toType)) {
+      matched++;
+      const roleDesc = componentRoles[edge.to] ?? '';
+      strengths.push({
+        code: `EDGE_${edge.from}_${edge.to}`,
+        message: `${nodeLabel(edge.from)} → ${nodeLabel(edge.to)} correctly placed${roleDesc ? ` — ${roleDesc}` : '.'}`,
+      });
+    } else if (hasFrom && hasTo) {
+      // Both nodes exist but direct edge is missing
+      const code = `MISSING_EDGE_${edge.from}_${edge.to}`;
+      if (!warningMap.has(code)) {
+        warningMap.set(code, {
+          code,
+          message: `${nodeLabel(edge.from)} and ${nodeLabel(edge.to)} are both present but not directly connected — draw an arrow from ${nodeLabel(edge.from)} to ${nodeLabel(edge.to)}.`,
+          severity: 'MEDIUM',
+        });
+      }
+    } else {
+      // One or both nodes absent — emit per missing type, deduplicated
+      if (!hasFrom) {
+        const code = `MISSING_NODE_${edge.from}`;
+        if (!warningMap.has(code)) {
+          warningMap.set(code, {
+            code,
+            message: `Your design is missing a ${nodeLabel(edge.from)}.`,
+            severity: 'MEDIUM',
+          });
+        }
+      }
+      if (!hasTo) {
+        const code = `MISSING_NODE_${edge.to}`;
+        if (!warningMap.has(code)) {
+          warningMap.set(code, {
+            code,
+            message: `Your design is missing a ${nodeLabel(edge.to)}.`,
+            severity: 'MEDIUM',
+          });
         }
       }
     }
-    return false;
-  },
-};
+  }
 
-const HIGH_SEVERITY_ANTI_PATTERNS = new Set([
-  'no_cdn',
-  'no_object_storage',
-  'direct_db_access_from_client',
-]);
-
-function antiPatternSeverity(code: string, expectedPatterns: string[]): 'LOW' | 'MEDIUM' | 'HIGH' {
-  if (HIGH_SEVERITY_ANTI_PATTERNS.has(code)) return 'HIGH';
-  const nodeTypeEquiv: Record<string, string> = {
-    no_cache: NodeType.CACHE,
-    no_load_balancer: NodeType.LOAD_BALANCER,
-    no_async_processing: NodeType.QUEUE,
-    no_api_gateway: NodeType.API_GATEWAY,
-    no_cdn: NodeType.CDN,
-    no_object_storage: NodeType.OBJECT_STORAGE,
+  return {
+    matched,
+    total: required.length,
+    warnings: Array.from(warningMap.values()),
+    strengths,
   };
-  if (nodeTypeEquiv[code] && expectedPatterns.includes(nodeTypeEquiv[code])) return 'HIGH';
-  return 'MEDIUM';
 }
 
-export function runAntiPatternRules(
+// ─── Step 3: Distractor check ─────────────────────────────────────────────────
+// Nodes whose type is in distractorNodeTypes don't belong in this design.
+// LOW severity — penalised in score but not a structural disaster.
+
+export function checkDistractors(
   graph: ArchitectureGraph,
-  template: EvaluationTemplate,
-  expectedPatterns: string[],
+  distractorNodeTypes: string[],
 ): EvaluationWarning[] {
   const warnings: EvaluationWarning[] = [];
-
-  for (const code of template.antiPatterns) {
-    const detector = ANTI_PATTERN_DETECTORS[code];
-    if (!detector) continue;
-
-    if (detector(graph)) {
-      const message =
-        template.hints[code] ??
-        `Anti-pattern detected: ${code.replace(/_/g, ' ')}.`;
-
+  const seen = new Set<string>();
+  for (const type of distractorNodeTypes) {
+    if (!seen.has(type) && graph.hasNodeType(type as NodeType)) {
+      seen.add(type);
       warnings.push({
-        code: code.toUpperCase(),
-        message,
-        severity: antiPatternSeverity(code, expectedPatterns),
+        code: `DISTRACTOR_${type}`,
+        message: `${nodeLabel(type)} is not part of this design — removing irrelevant components shows a clearer understanding of the architecture.`,
+        severity: 'LOW',
+      });
+    }
+  }
+  return warnings;
+}
+
+// ─── Step 3b: Spurious edge check ────────────────────────────────────────────
+// For every direct edge the user drew between two in-scope components (both in
+// availableNodeTypes), if that pair isn't in referenceEdges in either direction,
+// it's an unexpected connection — emit a LOW warning.
+// Pairs covered by illegalEdges are already flagged at HIGH; skip them here.
+
+export function checkSpuriousEdges(
+  graph: ArchitectureGraph,
+  referenceEdges: ReferenceEdge[],
+  availableNodeTypes: string[],
+  illegalEdges: IllegalEdge[],
+): EvaluationWarning[] {
+  const inScope = new Set(availableNodeTypes);
+
+  // Build a set of all allowed type pairs (both directions — forward + response)
+  const allowed = new Set<string>();
+  for (const { from, to } of referenceEdges) {
+    allowed.add(`${from}|${to}`);
+    allowed.add(`${to}|${from}`);
+  }
+
+  // Also skip pairs already covered by illegalEdges (those emit HIGH)
+  const illegal = new Set<string>();
+  for (const { from, to } of illegalEdges) {
+    illegal.add(`${from}|${to}`);
+  }
+
+  const warned = new Set<string>();
+  const warnings: EvaluationWarning[] = [];
+
+  for (const [sourceId, targets] of graph.adjacency) {
+    const sourceNode = graph.nodes.get(sourceId);
+    if (!sourceNode || !inScope.has(sourceNode.type)) continue;
+
+    for (const targetId of targets) {
+      const targetNode = graph.nodes.get(targetId);
+      if (!targetNode || !inScope.has(targetNode.type)) continue;
+
+      const pair = `${sourceNode.type}|${targetNode.type}`;
+      if (allowed.has(pair) || illegal.has(pair) || warned.has(pair)) continue;
+
+      warned.add(pair);
+      warnings.push({
+        code: `SPURIOUS_EDGE_${sourceNode.type}_${targetNode.type}`,
+        message: `${nodeLabel(sourceNode.type)} → ${nodeLabel(targetNode.type)} is not part of this design — this connection doesn't belong in the architecture.`,
+        severity: 'LOW',
       });
     }
   }
@@ -103,33 +243,15 @@ export function runAntiPatternRules(
   return warnings;
 }
 
-// ---------- Universal topology rules ----------
+// ─── Step 4: Topology checks ──────────────────────────────────────────────────
+// Universal structural rules independent of prompt content.
 
-const NODE_TYPE_LABELS: Partial<Record<NodeType, string>> = {
-  [NodeType.CLIENT]: 'Client',
-  [NodeType.CACHE]: 'Cache',
-  [NodeType.LOAD_BALANCER]: 'Load balancer',
-  [NodeType.CDN]: 'CDN',
-  [NodeType.QUEUE]: 'Async queue',
-  [NodeType.API_GATEWAY]: 'API Gateway',
-  [NodeType.OBJECT_STORAGE]: 'Object storage',
-  [NodeType.DATABASE]: 'Database',
-  [NodeType.SERVICE]: 'Service',
-  [NodeType.AUTH_SERVICE]: 'Auth service',
-  [NodeType.SEARCH_SERVICE]: 'Search service',
-};
-
-function label(type: string): string {
-  return NODE_TYPE_LABELS[type as NodeType] ?? type.replace(/_/g, ' ');
-}
-
-export function runTopologyRules(
+export function checkTopology(
   graph: ArchitectureGraph,
-  template: EvaluationTemplate,
+  referenceEdges: ReferenceEdge[],
 ): EvaluationWarning[] {
   const warnings: EvaluationWarning[] = [];
 
-  // Short-circuit: empty / trivial diagram
   if (graph.nodeCount < 2) {
     warnings.push({
       code: 'EMPTY_DIAGRAM',
@@ -139,152 +261,28 @@ export function runTopologyRules(
     return warnings;
   }
 
-  // ---- Client directly wired to database (always wrong) ----
-  if (graph.anyDirectEdge(NodeType.CLIENT, NodeType.DATABASE)) {
-    warnings.push({
-      code: 'DIRECT_DB_ACCESS_FROM_CLIENT',
-      message:
-        'The client connects directly to the database. Clients should never have direct DB access — route through a service or API layer.',
-      severity: 'HIGH',
-    });
-  }
-
-  // ---- Directed cycle ----
-  if (graph.hasUnexpectedCycle(template.expectedConnections ?? [])) {
-    warnings.push({
-      code: 'CYCLE_DETECTED',
-      message:
-        'Your diagram contains a directed cycle. Real request flows are acyclic — remove the back-edge(s) causing the loop.',
-      severity: 'HIGH',
-    });
-  }
-
-  // ---- CLIENT has no outgoing connections ----
-  if (graph.hasNodeType(NodeType.CLIENT) && graph.nodeCount >= 2) {
+  // Client node present but has no outgoing edges (fully reversed diagram)
+  if (graph.hasNodeType(NodeType.CLIENT)) {
     const clientNodes = graph.getNodesByType(NodeType.CLIENT);
-    const clientHasOutgoing = clientNodes.some(
-      (n) => (graph.adjacency.get(n.id)?.size ?? 0) > 0,
-    );
-    if (!clientHasOutgoing) {
+    const hasOutgoing = clientNodes.some((n) => (graph.adjacency.get(n.id)?.size ?? 0) > 0);
+    if (!hasOutgoing) {
       warnings.push({
         code: 'CLIENT_NO_OUTGOING',
-        message:
-          'The client has no outgoing connections. Traffic must flow from the client outward — your connections appear to be reversed.',
+        message: 'The client has no outgoing connections — your arrows appear to be reversed.',
         severity: 'HIGH',
       });
     }
   }
 
-  // ---- Wrong-direction connections (prompt-aware) ----
-  // Build a Set of valid directed pairs from the template.
-  // Any actual direct edge between two types that is the REVERSE of an expected
-  // pair — and has no corresponding forward expected pair — is flagged.
-  const expectedPairs = new Set(
-    (template.expectedConnections ?? []).map(([a, b]) => `${a}|${b}`),
-  );
-
-  // Collect all node-type pairs that have at least one actual direct edge in the diagram
-  const actualTypePairs = new Set<string>();
-  for (const [srcId, targets] of graph.adjacency) {
-    const srcNode = graph.nodes.get(srcId);
-    if (!srcNode) continue;
-    for (const tgtId of targets) {
-      const tgtNode = graph.nodes.get(tgtId);
-      if (!tgtNode) continue;
-      actualTypePairs.add(`${srcNode.type}|${tgtNode.type}`);
-    }
-  }
-
-  for (const pair of actualTypePairs) {
-    const [fromType, toType] = pair.split('|');
-    const reversePair = `${toType}|${fromType}`;
-
-    // If the reverse is expected but the forward is not → wrong direction
-    if (expectedPairs.has(reversePair) && !expectedPairs.has(pair)) {
-      warnings.push({
-        code: `WRONG_DIRECTION_${fromType}_${toType}`,
-        message: `${label(fromType)} → ${label(toType)} is backwards — the arrow should point from ${label(toType)} to ${label(fromType)}.`,
-        severity: 'MEDIUM',
-      });
-    }
-  }
-
-  // ---- Spurious connections (neither direction is expected for this prompt) ----
-  // Only fire when both node types are in the expected component set for this prompt,
-  // so we don't spam warnings about extra/bonus components the user added.
-  const expectedNodeTypes = new Set(
-    (template.expectedConnections ?? []).flatMap(([a, b]) => [a, b]),
-  );
-
-  for (const pair of actualTypePairs) {
-    const [fromType, toType] = pair.split('|');
-    if (fromType === toType) continue; // self-loops handled by cycle detection
-    // Skip CLIENT — it originates all flows so spurious CLIENT→X is already
-    // caught by wrong-direction or missing-connection warnings
-    if (fromType === NodeType.CLIENT || toType === NodeType.CLIENT) continue;
-
-    const forwardExpected = expectedPairs.has(pair);
-    const reverseExpected = expectedPairs.has(`${toType}|${fromType}`);
-    const bothInScope =
-      expectedNodeTypes.has(fromType) && expectedNodeTypes.has(toType);
-
-    if (!forwardExpected && !reverseExpected && bothInScope) {
-      warnings.push({
-        code: `SPURIOUS_CONNECTION_${fromType}_${toType}`,
-        message: `${label(fromType)} → ${label(toType)} is not a valid connection in this design — remove it or rewire the components correctly.`,
-        severity: 'MEDIUM',
-      });
-    }
-  }
-
-  // ---- Nodes unreachable from the client chain ----
-  // A node that is connected to *something* but has no directed path from CLIENT
-  // is not part of the real request flow — it's a floating subgraph.
-  if (graph.hasNodeType(NodeType.CLIENT)) {
-    const unreachable = graph.getUnreachableFromClient();
-    for (const node of unreachable) {
-      warnings.push({
-        code: `UNREACHABLE_NODE_${node.type}_${node.id}`,
-        message: `${node.data.label ?? label(node.type)} is not reachable from the client. Make sure it is wired into the main request flow.`,
-        severity: 'MEDIUM',
-      });
-    }
-  }
-
-  // ---- Isolated nodes ----
-  const isolated = graph
-    .getIsolatedNodes()
-    .filter((n) => n.type !== NodeType.CLIENT);
-
+  // Isolated nodes (zero edges in either direction)
+  const isolated = graph.getIsolatedNodes().filter((n) => n.type !== NodeType.CLIENT);
   for (const node of isolated) {
     warnings.push({
       code: `ISOLATED_NODE_${node.id}`,
-      message: `${node.data.label ?? label(node.type)} is not connected to anything. Connect it into the architecture or remove it.`,
+      message: `${node.data.label ?? nodeLabel(node.type)} is not connected to anything — connect it into the design or remove it.`,
       severity: 'LOW',
     });
   }
 
   return warnings;
-}
-
-// ---------- Strength detection ----------
-
-export function detectStrengths(
-  graph: ArchitectureGraph,
-  expectedPatterns: string[],
-): EvaluationStrength[] {
-  const strengths: EvaluationStrength[] = [];
-
-  for (const pattern of expectedPatterns) {
-    const nodeType = pattern as NodeType;
-    if (graph.hasNodeType(nodeType)) {
-      const lbl = NODE_TYPE_LABELS[nodeType] ?? nodeType;
-      strengths.push({
-        code: `HAS_${nodeType}`,
-        message: `Includes ${lbl}.`,
-      });
-    }
-  }
-
-  return strengths;
 }

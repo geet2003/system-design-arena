@@ -3,205 +3,348 @@
     "title": "Design a URL Shortener",
     "description": "Design a service like bit.ly that takes a long URL and returns a short alias. The system should redirect users to the original URL when the alias is accessed. Consider read-heavy traffic, collision handling, and analytics.",
     "difficulty": "EASY",
-    "expectedPatterns": ["CLIENT", "API_GATEWAY", "SERVICE", "DATABASE", "CACHE", "LOAD_BALANCER"],
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "URL_WRITE_SERVICE", "URL_READ_SERVICE", "ID_GENERATOR",
+      "REDIS_CACHE", "RELATIONAL_DB", "QUEUE", "ANALYTICS_SERVICE"
+    ],
     "evaluationTemplate": {
-      "requiredConcepts": ["hashing", "redirection", "caching"],
-      "antiPatterns": ["no_cache", "no_load_balancer"],
-      "hints": {
-        "no_cache": "A URL shortener is extremely read-heavy. Without a cache layer, every redirect hits the DB.",
-        "no_load_balancer": "At scale, a single redirect server is a bottleneck and single point of failure. A load balancer is needed to distribute traffic across multiple instances."
-      },
-      "expectedConnections": [
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "CACHE"],
-        ["SERVICE", "DATABASE"],
-        ["CACHE", "DATABASE"]
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "URL_WRITE_SERVICE", "URL_READ_SERVICE", "ID_GENERATOR",
+        "REDIS_CACHE", "RELATIONAL_DB", "QUEUE", "ANALYTICS_SERVICE"
+      ],
+      "distractorNodeTypes": [
+        "RATE_LIMITER_SERVICE", "FEED_SERVICE", "TRANSCODING_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",            "to": "LOAD_BALANCER",     "required": true  },
+        { "from": "LOAD_BALANCER",     "to": "API_GATEWAY",       "required": true  },
+        { "from": "API_GATEWAY",       "to": "URL_WRITE_SERVICE", "required": true  },
+        { "from": "API_GATEWAY",       "to": "URL_READ_SERVICE",  "required": true  },
+        { "from": "URL_WRITE_SERVICE", "to": "ID_GENERATOR",      "required": true  },
+        { "from": "URL_WRITE_SERVICE", "to": "RELATIONAL_DB",     "required": true  },
+        { "from": "URL_READ_SERVICE",  "to": "REDIS_CACHE",       "required": true  },
+        { "from": "URL_READ_SERVICE",  "to": "RELATIONAL_DB",     "required": true  },
+        { "from": "URL_READ_SERVICE",  "to": "QUEUE",             "required": true  },
+        { "from": "QUEUE",             "to": "ANALYTICS_SERVICE", "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",      "to": "URL_WRITE_SERVICE", "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "URL_READ_SERVICE",  "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "RELATIONAL_DB",     "reason": "DIRECT_DB_ACCESS"       },
+        { "from": "CLIENT",      "to": "REDIS_CACHE",       "reason": "CLIENT_BYPASS_GATEWAY"  },
+        { "from": "API_GATEWAY", "to": "RELATIONAL_DB",     "reason": "GATEWAY_DIRECT_DB"      }
       ],
       "componentRoles": {
-        "CLIENT": "The user or browser making a request to shorten a URL or follow a short link.",
-        "LOAD_BALANCER": "Distributes redirect and write traffic across multiple API Gateway / service instances to prevent any single node from becoming a bottleneck.",
-        "API_GATEWAY": "Entry point for all API traffic. Handles short-link resolution requests and routes them to the appropriate service.",
-        "SERVICE": "Core business logic — generates short codes (hashing / Base62 encoding), checks for collisions, and performs redirects.",
-        "CACHE": "Stores the most frequently accessed short-code → long-URL mappings so redirects can be served without hitting the database on every request.",
-        "DATABASE": "Persistent store for all short-code → long-URL mappings, user data, and analytics."
+        "CLIENT":            "The user or browser making requests to shorten a URL or follow a short link.",
+        "LOAD_BALANCER":     "Distributes redirect and write traffic across multiple gateway instances to prevent bottlenecks.",
+        "API_GATEWAY":       "Single entry point — routes POST /shorten to the Write Service and GET /{code} to the Read Service.",
+        "URL_WRITE_SERVICE": "Generates the short code via the ID Generator, stores the long-URL mapping in the database.",
+        "URL_READ_SERVICE":  "Resolves the short code — checks Redis first (cache hit), falls back to DB (cache miss), then publishes a click event to the queue.",
+        "ID_GENERATOR":      "Produces collision-resistant unique IDs using Base62 encoding or a distributed counter.",
+        "REDIS_CACHE":       "Stores frequently accessed short-code → long-URL mappings so redirects are served without hitting the DB on every request.",
+        "RELATIONAL_DB":     "Persistent store for all short-code → long-URL mappings, user data, and metadata.",
+        "QUEUE":             "Receives click events from the Read Service and decouples analytics processing from the redirect hot path.",
+        "ANALYTICS_SERVICE": "Consumes click events from the queue and writes aggregated analytics to a separate store."
       }
     }
   },
+
   {
     "title": "Design a Rate Limiter",
     "description": "Design a rate limiter that restricts the number of requests a client can make to an API within a time window. It should work in a distributed environment where multiple API servers are running.",
     "difficulty": "EASY",
-    "expectedPatterns": ["CLIENT", "API_GATEWAY", "CACHE", "SERVICE", "DATABASE", "LOAD_BALANCER"],
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "RATE_LIMITER_SERVICE", "REDIS_CACHE",
+      "APP_SERVICE", "QUEUE", "ANALYTICS_SERVICE"
+    ],
     "evaluationTemplate": {
-      "requiredConcepts": ["token_bucket", "sliding_window", "distributed_counter"],
-      "antiPatterns": ["no_cache", "no_gateway_cache_link", "no_load_balancer", "rate_limit_cache_has_outgoing"],
-      "hints": {
-        "no_cache": "Rate limiting counters (token bucket state, sliding window counts) must live in a fast in-memory store like Redis — not a relational DB.",
-        "no_gateway_cache_link": "The API Gateway is where rate limiting logic runs. It must be directly connected to the Cache (Redis) to read and increment request counters on every inbound request.",
-        "no_load_balancer": "A distributed rate limiter runs across multiple API Gateway instances — a load balancer is required to spread incoming traffic across them.",
-        "rate_limit_cache_has_outgoing": "The rate-limit cache (Redis) is a pure counter store — it should have no outgoing connections. Only the API Gateway reads and writes to it."
-      },
-      "expectedConnections": [
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "CACHE"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "CACHE"],
-        ["SERVICE", "DATABASE"],
-        ["CACHE", "DATABASE"]
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "RATE_LIMITER_SERVICE", "REDIS_CACHE",
+        "APP_SERVICE", "QUEUE", "ANALYTICS_SERVICE"
+      ],
+      "distractorNodeTypes": [
+        "FEED_SERVICE", "URL_WRITE_SERVICE", "TRANSCODING_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",               "to": "LOAD_BALANCER",      "required": true  },
+        { "from": "LOAD_BALANCER",        "to": "API_GATEWAY",        "required": true  },
+        { "from": "API_GATEWAY",          "to": "RATE_LIMITER_SERVICE","required": true  },
+        { "from": "RATE_LIMITER_SERVICE", "to": "REDIS_CACHE",        "required": true  },
+        { "from": "API_GATEWAY",          "to": "APP_SERVICE",        "required": true  },
+        { "from": "RATE_LIMITER_SERVICE", "to": "QUEUE",              "required": true  },
+        { "from": "QUEUE",                "to": "ANALYTICS_SERVICE",  "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",     "to": "API_GATEWAY",          "reason": "CLIENT_BYPASS_GATEWAY"   },
+        { "from": "CLIENT",     "to": "RATE_LIMITER_SERVICE", "reason": "CLIENT_BYPASS_GATEWAY"   },
+        { "from": "CLIENT",     "to": "APP_SERVICE",          "reason": "CLIENT_BYPASS_GATEWAY"   },
+        { "from": "REDIS_CACHE","to": "APP_SERVICE",          "reason": "CACHE_BYPASS_GATEWAY"    },
+        { "from": "REDIS_CACHE","to": "API_GATEWAY",          "reason": "CACHE_PASSTHROUGH_WRONG" }
       ],
       "componentRoles": {
-        "CLIENT": "The caller making API requests — could be a user, mobile app, or another service. Each client has a rate limit enforced against it.",
-        "LOAD_BALANCER": "Spreads traffic across multiple API Gateway instances. For rate limiting to be consistent, all instances must share the same Redis counter store.",
-        "API_GATEWAY": "This is where rate limiting happens. On every inbound request it reads the client's counter from Redis, increments it, and either forwards the request or rejects it with HTTP 429.",
-        "CACHE": "Acts as the distributed counter store (Redis). Holds token bucket state or sliding window counts per client. Must be shared across all gateway instances so limits are enforced globally.",
-        "SERVICE": "The downstream backend that only receives requests that have passed the rate limit check at the gateway.",
-        "DATABASE": "Persistent store for rate limit configuration (rules, quotas per client/plan) and audit logs."
+        "CLIENT":               "The caller making API requests that need to be rate-limited.",
+        "LOAD_BALANCER":        "Distributes incoming traffic across multiple API Gateway instances in the distributed setup.",
+        "API_GATEWAY":          "Entry point — forwards each request to the Rate Limiter Service before allowing it to proceed to the application.",
+        "RATE_LIMITER_SERVICE": "Implements the rate limiting algorithm (token bucket, sliding window). Reads and increments counters in Redis for each request.",
+        "REDIS_CACHE":          "Stores per-client request counters. Shared across all gateway instances so rate limiting is consistent in a distributed setup.",
+        "APP_SERVICE":          "Handles the actual business logic for allowed requests. Receives traffic only after the rate limiter approves.",
+        "QUEUE":                "Receives metrics events from the Rate Limiter for async processing — decouples analytics from the hot path.",
+        "ANALYTICS_SERVICE":    "Consumes rate-limit metrics from the queue and stores them for monitoring and alerting."
       }
     }
   },
+
   {
     "title": "Design Twitter's News Feed",
-    "description": "Design the news feed feature of Twitter where users see a ranked timeline of tweets from people they follow. Consider fan-out strategies, ranking, and the difference between celebrity and regular user follower counts.",
+    "description": "Design the home timeline feature of Twitter where users see a feed of tweets from people they follow. Consider fan-out on write, caching strategies, and the difference between celebrities and normal users.",
     "difficulty": "MEDIUM",
-    "expectedPatterns": ["CLIENT", "API_GATEWAY", "SERVICE", "DATABASE", "CACHE", "QUEUE", "LOAD_BALANCER"],
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "POST_SERVICE", "FEED_SERVICE", "USER_SERVICE", "MEDIA_SERVICE",
+      "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB",
+      "QUEUE", "TIMELINE_WORKER"
+    ],
     "evaluationTemplate": {
-      "requiredConcepts": ["fan_out", "timeline_aggregation", "caching", "async_processing"],
-      "antiPatterns": ["no_async_processing", "no_cache", "no_load_balancer", "single_database"],
-      "hints": {
-        "no_async_processing": "Pushing tweets to all follower feeds synchronously blocks the write path. A queue is essential for fan-out.",
-        "no_cache": "Feed reads massively outnumber writes. Without a cache layer, the DB becomes the bottleneck.",
-        "no_load_balancer": "A news feed serves millions of concurrent reads. Without a load balancer, a single service instance becomes the bottleneck.",
-        "single_database": "Tweets, user graphs, and precomputed timelines have very different access patterns. A single DB cannot efficiently handle all of them at Twitter's scale."
-      },
-      "expectedConnections": [
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "CACHE"],
-        ["SERVICE", "DATABASE"],
-        ["SERVICE", "QUEUE"],
-        ["QUEUE", "SERVICE"],
-        ["CACHE", "DATABASE"]
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "POST_SERVICE", "FEED_SERVICE", "USER_SERVICE", "MEDIA_SERVICE",
+        "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB",
+        "QUEUE", "TIMELINE_WORKER"
+      ],
+      "distractorNodeTypes": [
+        "RATE_LIMITER_SERVICE", "TRANSCODING_SERVICE", "TRIP_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",          "to": "LOAD_BALANCER",     "required": true  },
+        { "from": "LOAD_BALANCER",   "to": "API_GATEWAY",       "required": true  },
+        { "from": "API_GATEWAY",     "to": "POST_SERVICE",      "required": true  },
+        { "from": "API_GATEWAY",     "to": "FEED_SERVICE",      "required": true  },
+        { "from": "POST_SERVICE",    "to": "MEDIA_SERVICE",     "required": true  },
+        { "from": "POST_SERVICE",    "to": "NON_RELATIONAL_DB", "required": true  },
+        { "from": "POST_SERVICE",    "to": "QUEUE",             "required": true  },
+        { "from": "QUEUE",           "to": "TIMELINE_WORKER",   "required": true  },
+        { "from": "TIMELINE_WORKER", "to": "USER_SERVICE",      "required": true  },
+        { "from": "TIMELINE_WORKER", "to": "REDIS_CACHE",       "required": true  },
+        { "from": "FEED_SERVICE",    "to": "REDIS_CACHE",       "required": true  },
+        { "from": "FEED_SERVICE",    "to": "NON_RELATIONAL_DB", "required": true  },
+        { "from": "USER_SERVICE",    "to": "RELATIONAL_DB",     "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",      "to": "POST_SERVICE",      "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "FEED_SERVICE",      "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "NON_RELATIONAL_DB", "reason": "DIRECT_DB_ACCESS"       },
+        { "from": "CLIENT",      "to": "RELATIONAL_DB",     "reason": "DIRECT_DB_ACCESS"       },
+        { "from": "API_GATEWAY", "to": "NON_RELATIONAL_DB", "reason": "GATEWAY_DIRECT_DB"      },
+        { "from": "API_GATEWAY", "to": "RELATIONAL_DB",     "reason": "GATEWAY_DIRECT_DB"      }
       ],
       "componentRoles": {
-        "CLIENT": "The Twitter user's app or browser, requesting their home timeline or posting a new tweet.",
-        "LOAD_BALANCER": "Distributes read (timeline fetch) and write (tweet post) traffic across multiple service instances.",
-        "API_GATEWAY": "Routes requests to the correct downstream service — timeline reads, tweet writes, or user graph lookups.",
-        "SERVICE": "Multiple services: fan-out service that pushes new tweets into follower timelines (fan-out-on-write for regular users, fan-out-on-read for celebrities), and the read service that assembles and ranks the feed.",
-        "CACHE": "Stores precomputed timelines per user. The hot path for feed reads — avoids rebuilding the timeline from the DB on every request.",
-        "DATABASE": "Multiple stores: one for tweets/content, one for the social graph (follows), and one for precomputed timeline lists.",
-        "QUEUE": "Decouples tweet ingestion from fan-out. When a user tweets, the event is enqueued and fan-out workers asynchronously push it to follower caches."
+        "CLIENT":           "The web or mobile app user composing tweets or loading their home timeline.",
+        "LOAD_BALANCER":    "Spreads read (timeline) and write (tweet) traffic across multiple gateway instances.",
+        "API_GATEWAY":      "Routes POST /tweet to the Post Service and GET /feed to the Feed Service.",
+        "POST_SERVICE":     "Handles tweet creation — stores the tweet in the Tweet DB, uploads media via Media Service, and publishes a tweet event to the queue.",
+        "FEED_SERVICE":     "Serves the home timeline — reads pre-computed timelines from Redis cache; falls back to the Tweet DB on a cache miss.",
+        "USER_SERVICE":     "Manages follow-graph data. The Timeline Worker queries it to get the list of followers when fanning out a new tweet.",
+        "MEDIA_SERVICE":    "Handles media uploads (images, videos) triggered by the Post Service.",
+        "REDIS_CACHE":      "Stores pre-computed per-user timelines so Feed Service reads are fast without hitting the database.",
+        "NON_RELATIONAL_DB":"Stores tweet content — chosen for write throughput and horizontal scalability (e.g. Cassandra).",
+        "RELATIONAL_DB":    "Stores user profiles, follow-graph relationships — structured data that benefits from relational queries.",
+        "QUEUE":            "Receives tweet events from Post Service and decouples the fan-out process from the write path.",
+        "TIMELINE_WORKER":  "Consumes tweet events, fetches the author's follower list from User Service, and writes the tweet ID into each follower's Redis timeline cache."
       }
     }
   },
-  {
-    "title": "Design Uber",
-    "description": "Design Uber's core ride-matching system. Users request rides, nearby drivers are matched, and location is tracked in real time. Consider location indexing, matching latency, and handling high-frequency location updates.",
-    "difficulty": "MEDIUM",
-    "expectedPatterns": ["CLIENT", "API_GATEWAY", "SERVICE", "DATABASE", "CACHE", "QUEUE", "LOAD_BALANCER"],
-    "evaluationTemplate": {
-      "requiredConcepts": ["geospatial_indexing", "real_time_matching", "websockets", "pub_sub"],
-      "antiPatterns": ["no_cache", "single_database", "no_async_processing", "no_load_balancer"],
-      "hints": {
-        "no_cache": "Driver locations update every few seconds. A geospatial cache (e.g. Redis Geo) is required to query nearby drivers with low latency.",
-        "single_database": "Location updates from millions of drivers require a purpose-built geospatial store (e.g., Redis Geo, PostGIS) separate from the ride/user OLTP database.",
-        "no_async_processing": "Location updates arrive at very high frequency. Processing them synchronously on the write path creates unacceptable latency — use a queue to decouple ingestion from processing.",
-        "no_load_balancer": "High-frequency location updates from millions of concurrent drivers require horizontal scaling behind a load balancer."
-      },
-      "expectedConnections": [
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "CACHE"],
-        ["SERVICE", "DATABASE"],
-        ["SERVICE", "QUEUE"],
-        ["QUEUE", "SERVICE"]
-      ],
-      "componentRoles": {
-        "CLIENT": "The rider app (requesting a ride) or driver app (streaming location updates every few seconds).",
-        "LOAD_BALANCER": "Distributes the high volume of location update requests and ride-matching requests across service instances.",
-        "API_GATEWAY": "Entry point for all client traffic. Routes location pings, ride requests, and status updates to the appropriate backend service.",
-        "SERVICE": "Multiple services: location ingestion (writes driver position), matching service (finds nearest available driver using geospatial index), and trip management service.",
-        "CACHE": "Geospatial store (Redis Geo) holding live driver positions. Enables sub-millisecond nearest-driver queries without hitting the main database.",
-        "DATABASE": "Persistent store for trips, user profiles, ride history, and billing. Separate from the geospatial cache.",
-        "QUEUE": "Buffers the firehose of location updates from millions of drivers so the ingestion service isn't overwhelmed on the synchronous path."
-      }
-    }
-  },
+
   {
     "title": "Design YouTube",
-    "description": "Design YouTube's video upload, storage, and streaming infrastructure. Users upload videos which are processed into multiple resolutions and streamed globally. Consider large file handling, transcoding pipelines, and CDN delivery.",
+    "description": "Design a video hosting and streaming platform. Users should be able to upload videos, which are transcoded into multiple resolutions, and stream them on demand. Include search, recommendations, and CDN-based delivery.",
     "difficulty": "HARD",
-    "expectedPatterns": ["CLIENT", "CDN", "OBJECT_STORAGE", "QUEUE", "SERVICE", "API_GATEWAY", "DATABASE", "LOAD_BALANCER", "CACHE"],
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "UPLOAD_SERVICE", "STREAMING_SERVICE", "METADATA_SERVICE",
+      "RECOMMENDATION_SERVICE", "SEARCH_SERVICE",
+      "OBJECT_STORAGE", "NON_RELATIONAL_DB", "REDIS_CACHE", "CDN",
+      "QUEUE", "TRANSCODING_SERVICE", "THUMBNAIL_SERVICE"
+    ],
     "evaluationTemplate": {
-      "requiredConcepts": ["cdn", "object_storage", "async_transcoding", "chunked_upload"],
-      "antiPatterns": ["no_cdn", "no_object_storage", "no_async_processing", "no_load_balancer", "no_cache"],
-      "hints": {
-        "no_cdn": "Streaming video to a global audience without a CDN means all traffic hits your origin servers — infeasible at scale.",
-        "no_object_storage": "Videos cannot live in a relational DB. Object storage (S3-equivalent) is required for large binary files.",
-        "no_async_processing": "Video transcoding is CPU-intensive and long-running. It must be handled asynchronously via a queue and worker pool.",
-        "no_load_balancer": "Video upload and metadata API traffic must be distributed across multiple service instances. A load balancer is essential.",
-        "no_cache": "Video metadata (titles, thumbnails, view counts) is read far more than it is written. Without a cache layer, every page load hammers the database."
-      },
-      "expectedConnections": [
-        ["CLIENT", "CDN"],
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "QUEUE"],
-        ["QUEUE", "SERVICE"],
-        ["SERVICE", "OBJECT_STORAGE"],
-        ["SERVICE", "DATABASE"],
-        ["SERVICE", "CACHE"],
-        ["CDN", "OBJECT_STORAGE"]
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "UPLOAD_SERVICE", "STREAMING_SERVICE", "METADATA_SERVICE",
+        "RECOMMENDATION_SERVICE", "SEARCH_SERVICE",
+        "OBJECT_STORAGE", "NON_RELATIONAL_DB", "REDIS_CACHE", "CDN",
+        "QUEUE", "TRANSCODING_SERVICE", "THUMBNAIL_SERVICE"
+      ],
+      "distractorNodeTypes": [
+        "RATE_LIMITER_SERVICE", "TIMELINE_WORKER", "TRIP_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",                 "to": "LOAD_BALANCER",          "required": true  },
+        { "from": "LOAD_BALANCER",          "to": "API_GATEWAY",            "required": true  },
+        { "from": "API_GATEWAY",            "to": "UPLOAD_SERVICE",         "required": true  },
+        { "from": "API_GATEWAY",            "to": "STREAMING_SERVICE",      "required": true  },
+        { "from": "API_GATEWAY",            "to": "SEARCH_SERVICE",         "required": true  },
+        { "from": "API_GATEWAY",            "to": "RECOMMENDATION_SERVICE", "required": true  },
+        { "from": "UPLOAD_SERVICE",         "to": "OBJECT_STORAGE",         "required": true  },
+        { "from": "UPLOAD_SERVICE",         "to": "QUEUE",                  "required": true  },
+        { "from": "UPLOAD_SERVICE",         "to": "METADATA_SERVICE",       "required": true  },
+        { "from": "QUEUE",                  "to": "TRANSCODING_SERVICE",    "required": true  },
+        { "from": "QUEUE",                  "to": "THUMBNAIL_SERVICE",      "required": true  },
+        { "from": "TRANSCODING_SERVICE",    "to": "OBJECT_STORAGE",         "required": true  },
+        { "from": "THUMBNAIL_SERVICE",      "to": "OBJECT_STORAGE",         "required": true  },
+        { "from": "METADATA_SERVICE",       "to": "NON_RELATIONAL_DB",      "required": true  },
+        { "from": "STREAMING_SERVICE",      "to": "REDIS_CACHE",            "required": true  },
+        { "from": "STREAMING_SERVICE",      "to": "NON_RELATIONAL_DB",      "required": true  },
+        { "from": "STREAMING_SERVICE",      "to": "CDN",                    "required": true  },
+        { "from": "CDN",                    "to": "OBJECT_STORAGE",         "required": true  },
+        { "from": "SEARCH_SERVICE",         "to": "NON_RELATIONAL_DB",      "required": true  },
+        { "from": "RECOMMENDATION_SERVICE", "to": "NON_RELATIONAL_DB",      "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",      "to": "UPLOAD_SERVICE",    "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "STREAMING_SERVICE", "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "OBJECT_STORAGE",    "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "NON_RELATIONAL_DB", "reason": "DIRECT_DB_ACCESS"      },
+        { "from": "API_GATEWAY", "to": "OBJECT_STORAGE",    "reason": "GATEWAY_DIRECT_DB"     },
+        { "from": "API_GATEWAY", "to": "NON_RELATIONAL_DB", "reason": "GATEWAY_DIRECT_DB"     }
       ],
       "componentRoles": {
-        "CLIENT": "The viewer (streaming video) or creator (uploading video). Viewers hit the CDN for video data; creators hit the API for uploads.",
-        "LOAD_BALANCER": "Distributes upload and metadata API requests across multiple service instances.",
-        "API_GATEWAY": "Handles all API traffic — upload initiation, metadata fetches, search, and recommendations.",
-        "SERVICE": "Multiple services: upload service (receives chunks, stores to object storage), transcoding worker (consumes from queue, produces multiple resolutions), and metadata/recommendation service.",
-        "CACHE": "Stores video metadata (title, thumbnail URL, view count, description) to serve page loads without hitting the database on every request.",
-        "DATABASE": "Persistent store for video metadata, user data, comments, subscriptions, and view counts.",
-        "QUEUE": "Decouples upload completion from transcoding. When a raw video is uploaded, a job is enqueued and transcoding workers pick it up asynchronously.",
-        "OBJECT_STORAGE": "Stores raw uploaded video files and all transcoded renditions (360p, 720p, 1080p, etc.). The source of truth for all video bytes.",
-        "CDN": "Caches and serves video segments to viewers from edge nodes close to them. Eliminates origin load for the vast majority of playback traffic."
+        "CLIENT":                 "Web or mobile app — initiates uploads, requests video streams, searches, and recommendations.",
+        "LOAD_BALANCER":          "Distributes all inbound traffic across multiple gateway instances.",
+        "API_GATEWAY":            "Routes requests to the correct service: uploads, streaming, search, or recommendations.",
+        "UPLOAD_SERVICE":         "Accepts raw video, stores it in Object Storage, triggers transcoding/thumbnailing via the queue, and saves metadata.",
+        "STREAMING_SERVICE":      "Handles video watch requests — fetches metadata from cache (or DB on miss), then streams video via CDN.",
+        "METADATA_SERVICE":       "Persists video metadata (title, description, tags, resolution info) to the database.",
+        "RECOMMENDATION_SERVICE": "Queries the metadata DB to generate personalised video recommendations.",
+        "SEARCH_SERVICE":         "Full-text search over video metadata stored in the database.",
+        "OBJECT_STORAGE":         "Blob store (e.g. S3) for raw uploads, all transcoded resolution variants, and thumbnail images.",
+        "NON_RELATIONAL_DB":      "Stores video metadata at scale — chosen for write throughput and horizontal scalability.",
+        "REDIS_CACHE":            "Caches frequently accessed video metadata so Streaming Service reads are fast.",
+        "CDN":                    "Edge-caches video chunks close to users. Fetches from Object Storage on a cache miss.",
+        "QUEUE":                  "Decouples the upload hot path from transcoding and thumbnail generation — both workers consume from this queue.",
+        "TRANSCODING_SERVICE":    "Converts the original upload into multiple resolutions (360p, 720p, 1080p) and writes each variant back to Object Storage.",
+        "THUMBNAIL_SERVICE":      "Generates preview thumbnails from the video and stores them in Object Storage."
       }
     }
   },
+
   {
-    "title": "Design WhatsApp",
-    "description": "Design WhatsApp's messaging system supporting one-to-one and group messaging with delivery and read receipts. Consider message ordering, offline delivery, end-to-end encryption architecture, and handling billions of messages per day.",
+    "title": "Design Uber",
+    "description": "Design a ride-hailing platform where riders can request rides and drivers can accept them. Consider real-time driver location tracking, ride matching, trip management, and payment processing.",
     "difficulty": "HARD",
-    "expectedPatterns": ["CLIENT", "API_GATEWAY", "SERVICE", "DATABASE", "CACHE", "QUEUE", "LOAD_BALANCER"],
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "USER_SERVICE", "LOCATION_SERVICE", "MATCHING_SERVICE",
+      "TRIP_SERVICE", "PAYMENT_SERVICE", "NOTIFICATION_SERVICE",
+      "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB", "QUEUE"
+    ],
     "evaluationTemplate": {
-      "requiredConcepts": ["websockets", "message_queue", "offline_delivery", "pub_sub", "sharding"],
-      "antiPatterns": ["no_async_processing", "single_database", "no_cache", "no_load_balancer"],
-      "hints": {
-        "no_async_processing": "Message delivery to offline users requires a persistent queue — you cannot rely on a live connection being available.",
-        "single_database": "At billions of messages per day, a single DB is not viable. Messages and user/session data should be in separate stores, sharded by user or conversation ID.",
-        "no_cache": "User presence, session state, and recent message history are read constantly. A cache layer (e.g. Redis) is essential to avoid DB overload.",
-        "no_load_balancer": "Billions of daily messages across hundreds of millions of users require horizontally scaled service nodes behind a load balancer."
-      },
-      "expectedConnections": [
-        ["CLIENT", "LOAD_BALANCER"],
-        ["LOAD_BALANCER", "API_GATEWAY"],
-        ["API_GATEWAY", "SERVICE"],
-        ["SERVICE", "CACHE"],
-        ["SERVICE", "DATABASE"],
-        ["SERVICE", "QUEUE"],
-        ["QUEUE", "SERVICE"]
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "USER_SERVICE", "LOCATION_SERVICE", "MATCHING_SERVICE",
+        "TRIP_SERVICE", "PAYMENT_SERVICE", "NOTIFICATION_SERVICE",
+        "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB", "QUEUE"
+      ],
+      "distractorNodeTypes": [
+        "FEED_SERVICE", "TRANSCODING_SERVICE", "URL_WRITE_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",           "to": "LOAD_BALANCER",       "required": true  },
+        { "from": "LOAD_BALANCER",    "to": "API_GATEWAY",         "required": true  },
+        { "from": "API_GATEWAY",      "to": "USER_SERVICE",        "required": true  },
+        { "from": "API_GATEWAY",      "to": "LOCATION_SERVICE",    "required": true  },
+        { "from": "API_GATEWAY",      "to": "MATCHING_SERVICE",    "required": true  },
+        { "from": "API_GATEWAY",      "to": "TRIP_SERVICE",        "required": true  },
+        { "from": "API_GATEWAY",      "to": "PAYMENT_SERVICE",     "required": true  },
+        { "from": "LOCATION_SERVICE", "to": "REDIS_CACHE",         "required": true  },
+        { "from": "MATCHING_SERVICE", "to": "REDIS_CACHE",         "required": true  },
+        { "from": "MATCHING_SERVICE", "to": "QUEUE",               "required": true  },
+        { "from": "QUEUE",            "to": "NOTIFICATION_SERVICE","required": true  },
+        { "from": "TRIP_SERVICE",     "to": "NON_RELATIONAL_DB",   "required": true  },
+        { "from": "TRIP_SERVICE",     "to": "PAYMENT_SERVICE",     "required": true  },
+        { "from": "PAYMENT_SERVICE",  "to": "NON_RELATIONAL_DB",   "required": true  },
+        { "from": "USER_SERVICE",     "to": "RELATIONAL_DB",       "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",      "to": "LOCATION_SERVICE",  "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "MATCHING_SERVICE",  "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "RELATIONAL_DB",     "reason": "DIRECT_DB_ACCESS"      },
+        { "from": "CLIENT",      "to": "NON_RELATIONAL_DB", "reason": "DIRECT_DB_ACCESS"      },
+        { "from": "CLIENT",      "to": "REDIS_CACHE",       "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "API_GATEWAY", "to": "RELATIONAL_DB",     "reason": "GATEWAY_DIRECT_DB"     },
+        { "from": "API_GATEWAY", "to": "NON_RELATIONAL_DB", "reason": "GATEWAY_DIRECT_DB"     }
       ],
       "componentRoles": {
-        "CLIENT": "A user's mobile app, maintaining a persistent WebSocket connection to the messaging service for real-time delivery.",
-        "LOAD_BALANCER": "Routes WebSocket connections and API requests across messaging service nodes. Connection affinity (sticky sessions) may be needed for WebSocket.",
-        "API_GATEWAY": "Handles REST API calls (registration, key exchange, profile updates) and proxies WebSocket upgrade requests to the messaging service.",
-        "SERVICE": "Multiple services: connection manager (holds open WebSocket connections), message router (delivers to online users or enqueues for offline), and notification service (push notifications).",
-        "CACHE": "Stores user presence (online/offline), active WebSocket session mappings, and recent message history for fast delivery status lookups.",
-        "DATABASE": "Sharded message store (by conversation ID) and separate user/profile store. Messages are persisted for delivery guarantees and history.",
-        "QUEUE": "Buffers messages for offline users. When the recipient comes online, the queue is drained and messages are delivered in order."
+        "CLIENT":               "Rider app and Driver app — both route through the same Load Balancer and Gateway.",
+        "LOAD_BALANCER":        "Balances high-frequency driver location pings and rider ride requests across gateway instances.",
+        "API_GATEWAY":          "Routes requests to the appropriate service based on the operation type.",
+        "USER_SERVICE":         "Manages rider and driver profiles, authentication, and account data stored in a relational DB.",
+        "LOCATION_SERVICE":     "Receives continuous GPS updates from driver apps and writes current driver positions to Redis.",
+        "MATCHING_SERVICE":     "Queries Redis for nearby drivers, finds the best match for a ride request, and publishes a ride event to the queue.",
+        "TRIP_SERVICE":         "Creates and updates trip records as the ride progresses. Triggers payment on completion.",
+        "PAYMENT_SERVICE":      "Processes payments on trip completion and records payment status in the database.",
+        "NOTIFICATION_SERVICE": "Consumes ride request events from the queue and pushes notifications to the matched driver app.",
+        "REDIS_CACHE":          "Stores real-time driver location data — enables fast geospatial queries for the Matching Service.",
+        "RELATIONAL_DB":        "Stores structured user and driver profile data where relationships and consistency matter.",
+        "NON_RELATIONAL_DB":    "Stores trip records and payment records — chosen for write throughput during high-demand periods.",
+        "QUEUE":                "Decouples ride matching from notification delivery — the Matching Service publishes, Notification Service consumes."
+      }
+    }
+  },
+
+  {
+    "title": "Design WhatsApp",
+    "description": "Design a real-time messaging application. Users should be able to send messages that are delivered instantly if the recipient is online, or stored for later delivery if offline. Consider presence tracking, WebSocket connections, and message persistence.",
+    "difficulty": "HARD",
+    "expectedPatterns": [
+      "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+      "AUTH_SERVICE", "CHAT_SERVICE", "PRESENCE_SERVICE", "NOTIFICATION_SERVICE",
+      "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB", "QUEUE"
+    ],
+    "evaluationTemplate": {
+      "availableNodeTypes": [
+        "CLIENT", "LOAD_BALANCER", "API_GATEWAY",
+        "AUTH_SERVICE", "CHAT_SERVICE", "PRESENCE_SERVICE", "NOTIFICATION_SERVICE",
+        "REDIS_CACHE", "RELATIONAL_DB", "NON_RELATIONAL_DB", "QUEUE"
+      ],
+      "distractorNodeTypes": [
+        "FEED_SERVICE", "TRANSCODING_SERVICE", "MATCHING_SERVICE"
+      ],
+      "referenceEdges": [
+        { "from": "CLIENT",            "to": "LOAD_BALANCER",       "required": true  },
+        { "from": "LOAD_BALANCER",     "to": "API_GATEWAY",         "required": true  },
+        { "from": "API_GATEWAY",       "to": "AUTH_SERVICE",        "required": true  },
+        { "from": "API_GATEWAY",       "to": "CHAT_SERVICE",        "required": true  },
+        { "from": "API_GATEWAY",       "to": "PRESENCE_SERVICE",    "required": true  },
+        { "from": "CHAT_SERVICE",      "to": "NON_RELATIONAL_DB",   "required": true  },
+        { "from": "CHAT_SERVICE",      "to": "REDIS_CACHE",         "required": true  },
+        { "from": "CHAT_SERVICE",      "to": "QUEUE",               "required": true  },
+        { "from": "QUEUE",             "to": "NOTIFICATION_SERVICE","required": true  },
+        { "from": "PRESENCE_SERVICE",  "to": "REDIS_CACHE",         "required": true  },
+        { "from": "AUTH_SERVICE",      "to": "RELATIONAL_DB",       "required": true  }
+      ],
+      "illegalEdges": [
+        { "from": "CLIENT",      "to": "CHAT_SERVICE",      "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "CLIENT",      "to": "NON_RELATIONAL_DB", "reason": "DIRECT_DB_ACCESS"      },
+        { "from": "CLIENT",      "to": "RELATIONAL_DB",     "reason": "DIRECT_DB_ACCESS"      },
+        { "from": "CLIENT",      "to": "REDIS_CACHE",       "reason": "CLIENT_BYPASS_GATEWAY" },
+        { "from": "API_GATEWAY", "to": "NON_RELATIONAL_DB", "reason": "GATEWAY_DIRECT_DB"     },
+        { "from": "API_GATEWAY", "to": "RELATIONAL_DB",     "reason": "GATEWAY_DIRECT_DB"     }
+      ],
+      "componentRoles": {
+        "CLIENT":               "WhatsApp client for the sender and recipient — connects via WebSocket to the Chat Service for real-time messaging.",
+        "LOAD_BALANCER":        "Distributes persistent WebSocket connections across multiple Chat Service instances.",
+        "API_GATEWAY":          "Entry point for all connections — routes to Auth, Chat, or Presence Service based on the operation.",
+        "AUTH_SERVICE":         "Authenticates users on connection and validates tokens. Reads user records from the relational DB.",
+        "CHAT_SERVICE":         "The WebSocket server — receives messages, persists them to the Message DB, checks recipient presence via Redis, delivers directly if online, or queues for push notification if offline.",
+        "PRESENCE_SERVICE":     "Tracks which users are currently online by writing session state to Redis.",
+        "NOTIFICATION_SERVICE": "Consumes offline message events from the queue and sends push notifications to the recipient's device.",
+        "REDIS_CACHE":          "Stores online user sessions (Presence Service) and active WebSocket connection metadata (Chat Service).",
+        "RELATIONAL_DB":        "Stores user accounts, contact lists, and profile data — structured data suited for relational queries.",
+        "NON_RELATIONAL_DB":    "Stores message history — chosen for high write throughput and append-only access patterns (e.g. Cassandra).",
+        "QUEUE":                "Receives offline delivery events from Chat Service and decouples push notification delivery."
       }
     }
   }

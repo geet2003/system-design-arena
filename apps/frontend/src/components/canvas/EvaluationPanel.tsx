@@ -63,10 +63,12 @@ function ComponentBreakdown({
   const componentRoles = prompt.evaluationTemplate.componentRoles as Record<string, string> | undefined;
   if (!componentRoles) return null;
 
-  // Collect the node types the user placed (from strengths codes like "HAS_CACHE")
-  const placedTypes = new Set(
-    result.strengths
-      .map((s) => s.code.replace(/^HAS_/, ''))
+  // A component type is "placed" if there's no MISSING_NODE warning for it.
+  // MISSING_NODE warnings are only emitted when the node is absent from the canvas.
+  const missingTypes = new Set(
+    result.warnings
+      .filter((w) => w.code.startsWith('MISSING_NODE_'))
+      .map((w) => w.code.replace('MISSING_NODE_', '')),
   );
 
   const entries = Object.entries(componentRoles);
@@ -82,7 +84,7 @@ function ComponentBreakdown({
       </div>
       <div className="flex flex-col gap-0 pb-2">
         {entries.map(([nodeType, role]) => {
-          const placed = placedTypes.has(nodeType);
+        const placed = !missingTypes.has(nodeType);
           return (
             <div
               key={nodeType}

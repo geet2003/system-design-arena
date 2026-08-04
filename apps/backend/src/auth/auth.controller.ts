@@ -1,7 +1,9 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Res } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Res, Get, UseGuards, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsString, MinLength } from 'class-validator';
-import { Response } from 'express';
+import { Response, Request } from 'express';
+import { AuthGuard } from '@nestjs/passport';
+import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 
 class SignupDto {
@@ -32,7 +34,10 @@ const COOKIE_OPTIONS = {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('signup')
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
@@ -56,5 +61,20 @@ export class AuthController {
   logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie(COOKIE_NAME, { path: '/' });
     return { message: 'Logged out' };
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  googleAuth() {
+    // Passport redirects to Google — no body needed
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  googleCallback(@Req() req: Request & { user: { id: string; email: string } }, @Res() res: Response) {
+    const result = this.authService.googleLogin(req.user);
+    res.cookie(COOKIE_NAME, result.accessToken, COOKIE_OPTIONS);
+    const frontendUrl = this.configService.get<string>('cors.origin') ?? 'http://localhost:3000';
+    res.redirect(`${frontendUrl}/dashboard`);
   }
 }

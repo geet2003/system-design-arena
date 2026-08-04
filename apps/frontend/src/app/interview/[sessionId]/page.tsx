@@ -94,7 +94,10 @@ export default function InterviewPage({ params }: { params: { sessionId: string 
       {/* Canvas area */}
       <ReactFlowProvider>
         <div className="relative flex-1 overflow-hidden">
-          <NodePalette />
+          <NodePalette
+            availableNodeTypes={fullPrompt?.evaluationTemplate?.availableNodeTypes}
+            distractorNodeTypes={fullPrompt?.evaluationTemplate?.distractorNodeTypes}
+          />
           <EvaluationPanel
             result={result}
             isEvaluating={isEvaluating}

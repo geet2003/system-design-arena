@@ -18,4 +18,19 @@ export class UsersService {
   async findById(id: string) {
     return this.prisma.user.findUnique({ where: { id } });
   }
+
+  async findOrCreateByGoogle(googleId: string, email: string): Promise<{ id: string; email: string }> {
+    // 1. Existing Google-linked account
+    const byGoogleId = await this.prisma.user.findUnique({ where: { googleId } });
+    if (byGoogleId) return byGoogleId;
+
+    // 2. Existing email/password account — link Google to it
+    const byEmail = await this.prisma.user.findUnique({ where: { email } });
+    if (byEmail) {
+      return this.prisma.user.update({ where: { id: byEmail.id }, data: { googleId } });
+    }
+
+    // 3. Brand-new user
+    return this.prisma.user.create({ data: { email, googleId } });
+  }
 }

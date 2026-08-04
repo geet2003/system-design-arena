@@ -19,8 +19,13 @@ export class AuthService {
   async login(email: string, password: string) {
     const user = await this.usersService.findByEmail(email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
+    if (!user.passwordHash) throw new UnauthorizedException('This account uses Google login');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
+    return this.generateTokens(user.id, user.email);
+  }
+
+  googleLogin(user: { id: string; email: string }) {
     return this.generateTokens(user.id, user.email);
   }
 

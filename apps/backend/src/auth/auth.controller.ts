@@ -74,8 +74,7 @@ export class AuthController {
   @UseGuards(AuthGuard('google'))
   googleCallback(@Req() req: Request & { user: { id: string; email: string } }, @Res() res: Response) {
     const result = this.authService.googleLogin(req.user);
-    res.cookie(COOKIE_NAME, result.accessToken, COOKIE_OPTIONS);
     const frontendUrl = this.configService.get<string>('cors.origin') ?? 'http://localhost:3000';
-    res.redirect(`${frontendUrl}/dashboard`);
+    res.redirect(`${frontendUrl}/auth/callback?token=${result.accessToken}`);
   }
 }

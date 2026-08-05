@@ -1,11 +1,19 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
 
+function getTokenFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(/(?:^|;\s*)sds_token=([^;]+)/);
+  return match ? match[1] : null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = getTokenFromCookie();
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
-    credentials: 'include', // sends httpOnly cookie automatically
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   });

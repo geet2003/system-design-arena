@@ -11,7 +11,7 @@ const apiOrigin = (() => {
 const csp = [
   "default-src 'self'",
   // Scripts: self + Next.js inline scripts need unsafe-inline in dev; tighten in prod with nonces
-  isDev ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" : "script-src 'self'",
+  isDev ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline'",
   // Styles: unsafe-inline needed for Tailwind's runtime styles
   "style-src 'self' 'unsafe-inline'",
   // Images: self + data URIs (used by rough.js canvas exports)

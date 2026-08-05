@@ -24,10 +24,11 @@ class LoginDto {
 }
 
 const COOKIE_NAME = 'sds_token';
+const isProd = process.env.NODE_ENV === 'production';
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
+  sameSite: (isProd ? 'none' : 'lax') as 'none' | 'lax',
+  secure: isProd,
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
   path: '/',
 };

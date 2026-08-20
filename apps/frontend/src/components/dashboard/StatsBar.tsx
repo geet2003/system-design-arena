@@ -1,11 +1,13 @@
 'use client';
 
 import { PromptDifficulty } from '@sds/shared-types';
+import type { AIStats } from '@/hooks/useDashboard';
 
 interface StatsBarProps {
   solvedByDifficulty: Record<PromptDifficulty, number>;
   totalByDifficulty: Record<PromptDifficulty, number>;
   streak: number;
+  aiStats: AIStats;
 }
 
 const DIFF_STYLE: Record<PromptDifficulty, { label: string; color: string }> = {
@@ -14,7 +16,7 @@ const DIFF_STYLE: Record<PromptDifficulty, { label: string; color: string }> = {
   [PromptDifficulty.HARD]:   { label: 'HARD',   color: '#f87171' },
 };
 
-export function StatsBar({ solvedByDifficulty, totalByDifficulty, streak }: StatsBarProps) {
+export function StatsBar({ solvedByDifficulty, totalByDifficulty, streak, aiStats }: StatsBarProps) {
   return (
     <div
       className="flex flex-wrap items-center gap-6 px-5 py-3 mb-6"
@@ -37,6 +39,30 @@ export function StatsBar({ solvedByDifficulty, totalByDifficulty, streak }: Stat
         </div>
       ))}
 
+      {/* Divider */}
+      <div className="h-4 w-px bg-[#c9bfa8]" />
+
+      {/* AI Interview stats */}
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-xs font-bold font-mono text-[#7c3aed]">AI</span>
+        <span className="text-base font-bold font-mono text-[#1a1a1a]">{aiStats.count}</span>
+        <span className="text-xs font-mono text-[#888]">session{aiStats.count !== 1 ? 's' : ''}</span>
+      </div>
+
+      {aiStats.avgScore !== null && (
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs font-mono text-[#888]">avg</span>
+          <span className="text-base font-bold font-mono text-[#1a1a1a]">{aiStats.avgScore}</span>
+        </div>
+      )}
+
+      {aiStats.weakestDimension && (
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs font-mono text-[#888]">weakest</span>
+          <span className="text-xs font-bold font-mono text-[#991b1b]">{aiStats.weakestDimension}</span>
+        </div>
+      )}
+
       <div className="ml-auto flex items-baseline gap-1.5">
         <span className="text-xs font-bold font-mono text-[#fb923c]">STREAK</span>
         <span className="text-base font-bold font-mono text-[#1a1a1a]">{streak}</span>
@@ -45,4 +71,5 @@ export function StatsBar({ solvedByDifficulty, totalByDifficulty, streak }: Stat
     </div>
   );
 }
+
 

@@ -60,8 +60,19 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie(COOKIE_NAME, { path: '/' });
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: COOKIE_OPTIONS.httpOnly,
+      sameSite: COOKIE_OPTIONS.sameSite,
+      secure: COOKIE_OPTIONS.secure,
+      path: '/',
+    });
     return { message: 'Logged out' };
+  }
+
+  @Get('me')
+  @UseGuards(AuthGuard('jwt'))
+  getMe(@Req() req: Request & { user: { userId: string; email: string } }) {
+    return { userId: req.user.userId, email: req.user.email };
   }
 
   @Get('google')

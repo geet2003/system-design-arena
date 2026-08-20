@@ -15,6 +15,69 @@ export interface SessionSummary {
   evaluations: { score: number; generatedAt: string }[];
 }
 
+interface AISessionSummary {
+  id: string;
+  status: string;
+  rubricScores: {
+    scalability: number;
+    reliability: number;
+    correctness: number;
+    depth: number;
+    overall: number;
+  } | null;
+}
+
+export interface AIStats {
+  count: number;
+  avgScore: number | null;
+  weakestDimension: string | null;
+}
+
+const DIMENSION_LABELS: Record<string, string> = {
+  scalability: 'Scalability',
+  reliability: 'Reliability',
+  correctness: 'Correctness',
+  depth: 'Depth',
+};
+
+function computeAIStats(sessions: AISessionSummary[]): AIStats {
+  const completed = sessions.filter(
+    (s) => s.status === 'COMPLETED' && s.rubricScores,
+  );
+
+  if (completed.length === 0) {
+    return { count: sessions.length, avgScore: null, weakestDimension: null };
+  }
+
+  const totals = { scalability: 0, reliability: 0, correctness: 0, depth: 0, overall: 0 };
+  for (const s of completed) {
+    const r = s.rubricScores!;
+    totals.scalability += r.scalability;
+    totals.reliability += r.reliability;
+    totals.correctness += r.correctness;
+    totals.depth += r.depth;
+    totals.overall += r.overall;
+  }
+
+  const n = completed.length;
+  const avgs = {
+    scalability: totals.scalability / n,
+    reliability: totals.reliability / n,
+    correctness: totals.correctness / n,
+    depth: totals.depth / n,
+  };
+
+  const weakestKey = (Object.keys(avgs) as (keyof typeof avgs)[]).reduce((a, b) =>
+    avgs[a] <= avgs[b] ? a : b,
+  );
+
+  return {
+    count: sessions.length,
+    avgScore: Math.round(totals.overall / n),
+    weakestDimension: DIMENSION_LABELS[weakestKey] ?? weakestKey,
+  };
+}
+
 export function useDashboard() {
   const promptsQuery = useQuery({
     queryKey: ['prompts'],
@@ -26,8 +89,14 @@ export function useDashboard() {
     queryFn: () => apiClient.get<SessionSummary[]>('/sessions'),
   });
 
+  const aiSessionsQuery = useQuery({
+    queryKey: ['ai-sessions'],
+    queryFn: () => apiClient.get<AISessionSummary[]>('/ai-interview'),
+  });
+
   const sessions = sessionsQuery.data ?? [];
   const prompts = promptsQuery.data ?? [];
+  const aiSessions = aiSessionsQuery.data ?? [];
 
   // Count completed sessions per difficulty where score >= 70
   const solvedByDifficulty: Record<PromptDifficulty, number> = {
@@ -67,12 +136,13 @@ export function useDashboard() {
 
   // Map promptId → most recent session (for status icon + score on problem row)
   const sessionByPromptId = new Map<string, SessionSummary>();
-  // Sessions are ordered by updatedAt desc, so first encountered = most recent
   for (const s of sessions) {
     if (!sessionByPromptId.has(s.prompt.id)) {
       sessionByPromptId.set(s.prompt.id, s);
     }
   }
+
+  const aiStats = computeAIStats(aiSessions);
 
   return {
     prompts,
@@ -81,6 +151,8 @@ export function useDashboard() {
     completedDates,
     streak,
     sessionByPromptId,
+    aiStats,
     isLoading: promptsQuery.isLoading || sessionsQuery.isLoading,
   };
 }
+

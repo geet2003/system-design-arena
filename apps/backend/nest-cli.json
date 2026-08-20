@@ -2,10 +2,15 @@
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
-  "entryFile": "main",
+  "entryFile": "apps/backend/src/main",
   "compilerOptions": {
     "deleteOutDir": true,
-    "assets": ["**/*.json"],
+    "assets": [
+      {
+        "include": "**/*.json",
+        "outDir": "dist/apps/backend/src"
+      }
+    ],
     "watchAssets": true
   }
 }

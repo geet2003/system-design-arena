@@ -14,6 +14,7 @@ model User {
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
   sessions     InterviewSession[]
+  aiSessions   AISession[]
 
   @@map("users")
 }
@@ -84,6 +85,53 @@ enum PromptDifficulty {
 }
 
 enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+model AISession {
+  id                      String          @id @default(cuid())
+  userId                  String
+  question                String
+  category                String
+  phase                   AISessionPhase  @default(OPENING)
+  status                  AISessionStatus @default(ACTIVE)
+  rubricScores            Json?
+  diagramSnapshot         String?
+  previousDiagramSnapshot String?
+  lastPhaseTransitionAt   DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  expiresAt               DateTime
+  user                    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages                AIMessage[]
+
+  @@index([userId])
+  @@map("ai_sessions")
+}
+
+model AIMessage {
+  id        String    @id @default(cuid())
+  sessionId String
+  role      String
+  content   String    @db.Text
+  createdAt DateTime  @default(now())
+  session   AISession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("ai_messages")
+}
+
+enum AISessionPhase {
+  OPENING
+  HLD_SUBMITTED
+  DEEP_DIVE
+  SCALING
+  CONCLUSION
+}
+
+enum AISessionStatus {
   ACTIVE
   COMPLETED
   ABANDONED

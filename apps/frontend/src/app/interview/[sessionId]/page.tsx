@@ -28,6 +28,11 @@ export default function InterviewPage({ params }: { params: { sessionId: string 
   const { result, isEvaluating, error, evaluate } = useEvaluation(params.sessionId, cancelAutosave);
   const { submit, isCompleting, error: completeError } = useComplete(params.sessionId);
 
+  async function handleSubmit() {
+    if (!result) await evaluate();
+    await submit();
+  }
+
   const { data: fullPrompt } = useQuery({
     queryKey: ['prompt', sessionPrompt?.id],
     queryFn: () => apiClient.get<Prompt>(`/prompts/${sessionPrompt!.id}`),
@@ -69,17 +74,17 @@ export default function InterviewPage({ params }: { params: { sessionId: string 
             <span className="text-[9px] font-mono text-red-500">{completeError}</span>
           )}
           <button
-            onClick={submit}
-            disabled={isCompleting}
+            onClick={handleSubmit}
+            disabled={isCompleting || isEvaluating}
             className="text-[9px] font-mono tracking-widest px-3 py-0.5 transition"
             style={{
               border: '1px solid #1a1a1a',
-              backgroundColor: isCompleting ? '#e5e7eb' : '#1a1a1a',
-              color: isCompleting ? '#888' : '#faf7f2',
-              cursor: isCompleting ? 'not-allowed' : 'pointer',
+              backgroundColor: (isCompleting || isEvaluating) ? '#e5e7eb' : '#1a1a1a',
+              color: (isCompleting || isEvaluating) ? '#888' : '#faf7f2',
+              cursor: (isCompleting || isEvaluating) ? 'not-allowed' : 'pointer',
             }}
           >
-            {isCompleting ? 'submitting…' : 'SUBMIT'}
+            {isEvaluating ? 'evaluating…' : isCompleting ? 'submitting…' : 'SUBMIT'}
           </button>
           <Link
             href="/dashboard"

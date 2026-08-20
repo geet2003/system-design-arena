@@ -53,13 +53,10 @@ export function useSignup() {
 }
 
 export function useLogout() {
-  const router = useRouter();
-
   async function logout() {
     await apiClient.post('/auth/logout', {}).catch(() => null);
-    // replace() removes dashboard from history stack so back button can't return to it
-    router.replace('/login');
-    router.refresh(); // invalidates the Next.js cache so the auth cookie is re-checked
+    // Full page navigation clears bfcache so back button can't restore the dashboard state
+    window.location.replace('/login');
   }
 
   return { logout };

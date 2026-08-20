@@ -14,7 +14,7 @@ const StreakCalendar = dynamic(
 );
 
 export default function DashboardPage() {
-  const { prompts, solvedByDifficulty, completedDates, streak, sessionByPromptId, isLoading } =
+  const { prompts, solvedByDifficulty, completedDates, streak, sessionByPromptId, aiStats, isLoading } =
     useDashboard();
 
   // Total problems per difficulty (for the X/Y display)
@@ -38,6 +38,7 @@ export default function DashboardPage() {
         solvedByDifficulty={solvedByDifficulty}
         totalByDifficulty={totalByDifficulty}
         streak={streak}
+        aiStats={aiStats}
       />
 
       <StreakCalendar completedDates={completedDates} />

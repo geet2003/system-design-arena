@@ -10,6 +10,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { DiagramsModule } from './diagrams/diagrams.module';
 import { PromptsModule } from './prompts/prompts.module';
 import { EvaluationModule } from './evaluation/evaluation.module';
+import { AIInterviewModule } from './ai-interview/ai-interview.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { EvaluationModule } from './evaluation/evaluation.module';
     DiagramsModule,
     PromptsModule,
     EvaluationModule,
+    AIInterviewModule,
   ],
   providers: [
     {

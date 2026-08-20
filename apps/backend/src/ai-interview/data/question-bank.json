@@ -1,0 +1,49 @@
+{
+  "Messaging & Chat": [
+    "Design WhatsApp",
+    "Design Slack",
+    "Design Discord",
+    "Design Facebook Messenger"
+  ],
+  "Video & Media": [
+    "Design Netflix",
+    "Design TikTok",
+    "Design Instagram Stories",
+    "Design a live streaming platform like Twitch"
+  ],
+  "Payments & Fintech": [
+    "Design Stripe's payment processing system",
+    "Design PayPal",
+    "Design Venmo",
+    "Design a UPI payment system"
+  ],
+  "Search & Discovery": [
+    "Design Google Search (web crawler + indexer)",
+    "Design Twitter Search",
+    "Design Yelp (proximity search)",
+    "Design Airbnb search"
+  ],
+  "Social Feed": [
+    "Design Twitter/X Feed",
+    "Design Instagram Feed",
+    "Design LinkedIn Feed",
+    "Design Reddit"
+  ],
+  "Storage & Files": [
+    "Design Dropbox",
+    "Design Google Drive",
+    "Design an S3-like object storage system",
+    "Design Google Photos"
+  ],
+  "Ride & Delivery": [
+    "Design Uber",
+    "Design DoorDash",
+    "Design Swiggy / Zomato"
+  ],
+  "Gaming & Realtime": [
+    "Design a multiplayer game leaderboard",
+    "Design Chess.com",
+    "Design a live sports score system",
+    "Design a distributed job scheduler"
+  ]
+}

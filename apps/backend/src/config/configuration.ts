@@ -19,4 +19,7 @@ export default () => ({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
     callbackUrl: process.env.GOOGLE_CALLBACK_URL ?? 'http://localhost:3001/api/auth/google/callback',
   },
+  gemini: {
+    apiKey: process.env.GEMINI_API_KEY ?? '',
+  },
 });

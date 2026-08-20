@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { LogoutButton } from '@/components/dashboard/LogoutButton';
+import { UserBadge } from '@/components/dashboard/UserBadge';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -25,7 +26,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             SYSTEM DESIGN
           </Link>
         </div>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <UserBadge />
+          <LogoutButton />
+        </div>
       </nav>
 
       {/* Page content — left-padded to clear the margin rule */}
